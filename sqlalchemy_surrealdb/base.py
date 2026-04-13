@@ -1,9 +1,9 @@
 from __future__ import annotations
+from sqlalchemy.sql.compiler import SQLCompiler, DDLCompiler
 
 from typing import Any, Tuple
 from sqlalchemy.engine import default, reflection
 from sqlalchemy import exc
-from sqlalchemy.sql import expression
 from sqlalchemy.dialects import registry
 from sqlalchemy.sql import compiler
 
@@ -131,8 +131,16 @@ class SurrealDBIdentifierPreparer(compiler.IdentifierPreparer):
     }
 
 
-class SurrealDBCompiler(default.DefaultDialect.statement_compiler):
-    def visit_textclause(self, textclause: expression.TextClause, **kwargs: Any) -> str:
+class SurrealDBCompiler(SQLCompiler):
+    def __init__(self, dialect, statement, **kwargs: Any) -> None:
+        super().__init__(dialect, statement, **kwargs)
+        self.bindtemplate = "$%(name)s"
+        self.compilation_bindtemplate = "$%(name)s"
+
+    def bindparam_string(self, name, *args, **kwargs):
+        return "$" + name
+
+    def visit_textclause(self, textclause, *args, **kwargs) -> str:
         text = textclause.text
         text_upper = text.upper().strip()
 
@@ -144,8 +152,8 @@ class SurrealDBCompiler(default.DefaultDialect.statement_compiler):
 
         return text
 
-    def visit_select(self, select: expression.Select, **kwargs: Any) -> str:
-        sql = super().visit_select(select, **kwargs)
+    def visit_select(self, *args, **kwargs: Any) -> str:
+        sql = super().visit_select(*args, **kwargs)
 
         if "FROM" not in sql.upper():
             import re
@@ -156,12 +164,12 @@ class SurrealDBCompiler(default.DefaultDialect.statement_compiler):
         return sql
 
 
-class SurrealDBDDLCompiler(default.DefaultDialect.ddl_compiler):
+class SurrealDBDDLCompiler(DDLCompiler):
     def get_column_specification(self, column: Any, **kwargs: Any) -> str:
         colspec = self.preparer.format_column(column)
 
         if column.autoincrement:
-            colspec += " AUTOINCREMENT"
+            colspec += " FLEX"
 
         if column.server_default is not None:
             default = self.get_column_default_string(column)
@@ -199,8 +207,6 @@ class SurrealDBDialect(default.DefaultDialect):
 
     max_identifier_length = 1024
 
-    default_paramstyle = "named"
-
     statement_compiler = SurrealDBCompiler
     ddl_compiler = SurrealDBDDLCompiler
     type_compiler_cls = SurrealDBTypeCompiler
@@ -225,10 +231,6 @@ class SurrealDBDialect(default.DefaultDialect):
         from sqlalchemy_surrealdb import surrealdb as dbapi
 
         return dbapi.DatabaseError
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self._pool = None
 
     @classmethod
     def get_pool_class(cls, url: Any):
@@ -454,7 +456,7 @@ class SurrealDBDialect(default.DefaultDialect):
         result = connection.exec_driver_sql(
             f"SELECT name FROM SCHEMAFULL WHERE name = '{table_name}'"
         )
-        return len(result) > 0
+        return result.fetchone() is not None
 
 
 registry.register("surrealdb", "sqlalchemy_surrealdb.base", "SurrealDBDialect")
