@@ -13,6 +13,10 @@ refactor = "Refactors"
 path = "."
 resolver = "python"
 
+[[resolver.python.prepublish]]
+command = "uv"
+args = ["build"]
+
 [[resolver.python.publish]]
 command = "uv"
 args = ["publish"]
