@@ -39,6 +39,7 @@ import uuid
 
 Base = declarative_base()
 
+
 class User(Base):
     __tablename__ = "users"
 
@@ -50,6 +51,7 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False)
     email = Column(String(120), unique=True, nullable=False)
     age = Column(Integer, nullable=True)
+
 
 # Create tables
 engine = create_engine("surrealdb://root:root@127.0.0.1:5070/test")

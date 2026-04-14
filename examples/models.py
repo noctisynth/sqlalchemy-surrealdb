@@ -117,7 +117,8 @@ def test_crud():
         from sqlalchemy import or_
 
         users = (
-            session.query(User)
+            session
+            .query(User)
             .filter(or_(User.username == "alice", User.username == "bob"))
             .all()
         )

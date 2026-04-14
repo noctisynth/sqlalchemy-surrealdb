@@ -1,0 +1,20 @@
+name: Semifold CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CLICOLOR_FORCE: 1
+
+jobs:
+  build:
+    name: Format and Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - uses: astral-sh/ruff-action@v3
+      - name: Lint
+        run: uvx ty check --output-format=github

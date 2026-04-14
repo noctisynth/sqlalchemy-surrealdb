@@ -12,7 +12,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  build:
+  release:
     name: Version or Publish
     runs-on: ubuntu-latest
     steps:

@@ -134,7 +134,7 @@ class SurrealDBCursor:
         if self._last_result and len(self._last_result) > 0:
             first_row = self._last_result[0]
             if hasattr(first_row, "keys"):
-                db_keys = list(first_row.keys()) # type: ignore
+                db_keys = list(first_row.keys())  # type: ignore
                 if col_order:
                     ordered = []
                     for name in col_order:
