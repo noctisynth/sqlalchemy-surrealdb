@@ -73,10 +73,9 @@ session.commit()
 
 ## 限制
 
-- INSERT/UPDATE/DELETE 不支持 `RETURNING` 子句
-- 不支持 schema（SurrealDB 使用命名空间/数据库的概念）
-- 不支持连接池（使用 `NullPool`）
-- 部分场景下表前缀列名会被移除
+- 复杂表达式暂时未被全部测试
+- 尚不支持异步
+- SQL语句构建目前先继承于SQLAlchemy并在结果上进行修改，这可能导致无法预料的问题，且会导致性能开销
 
 ## 环境要求
 
