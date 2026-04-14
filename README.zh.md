@@ -1,5 +1,7 @@
 # SQLAlchemy SurrealDB 方言
 
+[English](./README.md) | 简体中文
+
 > ⚠️ **实验性阶段**：本项目处于实验性阶段，可能随时发生破坏性变更。生产环境使用请自行承担风险。
 
 [SQLAlchemy](https://www.sqlalchemy.org/) 的 [SurrealDB](https://surrealdb.com/) 方言驱动。
@@ -80,8 +82,8 @@ session.commit()
 
 - Python >= 3.9
 - SQLAlchemy >= 2.0
-- 运行中的 SurrealDB 服务器（测试于 SurrealDB 1.0+）
+- 运行中的 SurrealDB 服务器（测试于 SurrealDB 3.0.4）
 
 ## 许可证
 
-MIT
+AGPL-v3.0

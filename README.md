@@ -1,5 +1,7 @@
 # SQLAlchemy SurrealDB Dialect
 
+English | [简体中文](./README.zh.md)
+
 > ⚠️ **Experimental Stage**: This project is in an experimental stage. Breaking changes may occur at any time. Use in production at your own risk.
 
 A SQLAlchemy dialect for [SurrealDB](https://surrealdb.com/).
@@ -71,17 +73,16 @@ session.commit()
 
 ## Limitations
 
-- No `RETURNING` clause support for INSERT/UPDATE/DELETE
-- No schema support (SurrealDB uses namespaces/databases differently)
-- No connection pooling (uses `NullPool`)
-- Table-prefixed columns are stripped in some SQL contexts
+- Complex expressions have not yet been fully tested
+- Asynchronous operations are not yet supported
+- SQL statement construction currently inherits from SQLAlchemy and modifies the results, which may lead to unexpected issues and result in a performance overhead
 
 ## Requirements
 
 - Python >= 3.9
 - SQLAlchemy >= 2.0
-- SurrealDB server running (tested with SurrealDB 1.0+)
+- SurrealDB server running (tested with SurrealDB 3.0.4)
 
 ## License
 
-MIT
+AGPL-v3.0
