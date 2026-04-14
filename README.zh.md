@@ -1,24 +1,24 @@
-# SQLAlchemy SurrealDB Dialect
+# SQLAlchemy SurrealDB 方言
 
-> ⚠️ **Experimental Stage**: This project is in an experimental stage. Breaking changes may occur at any time. Use in production at your own risk.
+> ⚠️ **实验性阶段**：本项目处于实验性阶段，可能随时发生破坏性变更。生产环境使用请自行承担风险。
 
-A SQLAlchemy dialect for [SurrealDB](https://surrealdb.com/).
+[SQLAlchemy](https://www.sqlalchemy.org/) 的 [SurrealDB](https://surrealdb.com/) 方言驱动。
 
-## Installation
+## 安装
 
 ```bash
 uv add sqlalchemy-surrealdb
-# or
+# 或
 pip install sqlalchemy-surrealdb
 ```
 
-## Connection String
+## 连接字符串
 
 ```
-surrealdb://username:password@host:port/database
+surrealdb://用户名:密码@主机:端口/数据库
 ```
 
-Example:
+示例：
 
 ```python
 from sqlalchemy import create_engine
@@ -26,7 +26,7 @@ from sqlalchemy import create_engine
 engine = create_engine("surrealdb://root:root@127.0.0.1:5070/test")
 ```
 
-## Usage
+## 使用方法
 
 ```python
 from sqlalchemy import Column, String, Integer, create_engine
@@ -49,39 +49,39 @@ class User(Base):
     email = Column(String(120), unique=True, nullable=False)
     age = Column(Integer, nullable=True)
 
-# Create tables
+# 创建表
 engine = create_engine("surrealdb://root:root@127.0.0.1:5070/test")
 Base.metadata.create_all(bind=engine)
 
-# Use session
+# 使用会话
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 session = SessionLocal()
 
-# CRUD operations
+# CRUD 操作
 user = User(username="alice", email="alice@example.com", age=25)
 session.add(user)
 session.commit()
 ```
 
-## Features
+## 功能特性
 
-- Basic CRUD operations
-- SQLAlchemy ORM support
-- Custom `SurrealRecordID` type for SurrealDB RecordID handling
+- 基本的 CRUD 操作
+- SQLAlchemy ORM 支持
+- 自定义 `SurrealRecordID` 类型，用于处理 SurrealDB 的 RecordID
 
-## Limitations
+## 限制
 
-- No `RETURNING` clause support for INSERT/UPDATE/DELETE
-- No schema support (SurrealDB uses namespaces/databases differently)
-- No connection pooling (uses `NullPool`)
-- Table-prefixed columns are stripped in some SQL contexts
+- INSERT/UPDATE/DELETE 不支持 `RETURNING` 子句
+- 不支持 schema（SurrealDB 使用命名空间/数据库的概念）
+- 不支持连接池（使用 `NullPool`）
+- 部分场景下表前缀列名会被移除
 
-## Requirements
+## 环境要求
 
 - Python >= 3.9
 - SQLAlchemy >= 2.0
-- SurrealDB server running (tested with SurrealDB 1.0+)
+- 运行中的 SurrealDB 服务器（测试于 SurrealDB 1.0+）
 
-## License
+## 许可证
 
 MIT
