@@ -1,0 +1,5 @@
+[default.extend-words]
+surrealdb = "surrealdb"
+
+[files]
+extend-exclude = [".pre-commit-config.yaml"]

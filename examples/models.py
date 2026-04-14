@@ -1,11 +1,12 @@
-from typing import Union
-from surrealdb import RecordID
-from sqlalchemy_surrealdb.types import SurrealRecordID
-from sqlalchemy import Column, String, DateTime, ForeignKey, create_engine, Integer
-from sqlalchemy.orm import declarative_base, sessionmaker
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
+from typing import Union
 
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
+from surrealdb import RecordID
+
+from sqlalchemy_surrealdb.types import SurrealRecordID
 
 Base = declarative_base()
 
@@ -116,8 +117,7 @@ def test_crud():
         from sqlalchemy import or_
 
         users = (
-            session
-            .query(User)
+            session.query(User)
             .filter(or_(User.username == "alice", User.username == "bob"))
             .all()
         )

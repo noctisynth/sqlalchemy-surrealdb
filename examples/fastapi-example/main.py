@@ -1,11 +1,10 @@
-from surrealdb import RecordID
-from sqlalchemy.orm import sessionmaker, Session
-from models import Base, User, Post, UserModel, PostModel
-from sqlalchemy import create_engine
 from contextlib import asynccontextmanager
-from typing import Optional
-from fastapi import FastAPI
 
+from fastapi import FastAPI
+from models import Base, Post, PostModel, User, UserModel
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from surrealdb import RecordID
 
 session: Session
 
