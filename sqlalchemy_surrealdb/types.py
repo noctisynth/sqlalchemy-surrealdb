@@ -18,10 +18,9 @@ class SurrealRecordID(TypeDecorator):
         if isinstance(value, RecordID):
             return value
 
-        print(value)
         try:
             return RecordID.parse(value)
-        except ValueError:
+        except (ValueError, AttributeError):
             return value
 
     def process_result_value(

@@ -167,6 +167,26 @@ class SurrealDBCompiler(SQLCompiler):
 
         return sql
 
+    def visit_update(self, update_stmt, *args, **kwargs: Any) -> str:
+        import re
+
+        sql = super().visit_update(update_stmt, *args, **kwargs)
+
+        # Remove table prefix from WHERE clause (e.g., "users.id" -> "id")
+        sql = re.sub(r"WHERE\s+\w+\.(\w+)\s*=", r"WHERE \1 =", sql)
+
+        return sql
+
+    def visit_delete(self, delete_stmt, *args, **kwargs: Any) -> str:
+        import re
+
+        sql = super().visit_delete(delete_stmt, *args, **kwargs)
+
+        # Remove table prefix from WHERE clause (e.g., "users.id" -> "id")
+        sql = re.sub(r"WHERE\s+\w+\.(\w+)\s*=", r"WHERE \1 =", sql)
+
+        return sql
+
 
 class SurrealDBDDLCompiler(DDLCompiler):
     def get_column_specification(self, column: Any, **kwargs: Any) -> str:

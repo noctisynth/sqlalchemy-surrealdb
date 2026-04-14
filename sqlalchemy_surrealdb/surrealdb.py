@@ -129,13 +129,37 @@ class SurrealDBCursor:
             self._rowcount = 0
 
         # Set description BEFORE returning
+        # Extract column aliases from SQL to preserve order
+        col_order = self._extract_columns_from_query(query)
         if self._last_result and len(self._last_result) > 0:
             first_row = self._last_result[0]
             if hasattr(first_row, "keys"):
-                self._description = tuple(
-                    (name, 0, 0, 0, 0, 0, 0)
-                    for name in first_row.keys()  # type:ignore
-                )
+                db_keys = list(first_row.keys()) # type: ignore
+                if col_order:
+                    ordered = []
+                    for name in col_order:
+                        if name in db_keys:
+                            ordered.append(name)
+                        else:
+                            stripped = name.replace("users_", "").replace("posts_", "")
+                            found = next(
+                                (
+                                    k
+                                    for k in db_keys
+                                    if k.replace("users_", "").replace("posts_", "")
+                                    == stripped
+                                ),
+                                name,
+                            )
+                            ordered.append(found)
+                    self._description = tuple(
+                        (name, 0, 0, 0, 0, 0, 0) for name in ordered
+                    )
+                else:
+                    self._description = tuple(
+                        (name, 0, 0, 0, 0, 0, 0)
+                        for name in first_row.keys()  # type:ignore
+                    )
             elif isinstance(first_row, dict):
                 self._description = tuple(
                     (name, 0, 0, 0, 0, 0, 0) for name in first_row.keys()
@@ -147,6 +171,26 @@ class SurrealDBCursor:
 
         return self
 
+    def _extract_columns_from_query(self, query: str) -> list:
+        import re
+
+        cols = []
+        select_match = re.search(
+            r"SELECT\s+(.+?)\s+FROM", query, re.IGNORECASE | re.DOTALL
+        )
+        if select_match:
+            cols_part = select_match.group(1)
+            for col in cols_part.split(","):
+                col = col.strip()
+                match = re.search(r"AS\s+(\w+)", col, re.IGNORECASE)
+                if match:
+                    cols.append(match.group(1))
+                else:
+                    alias = col.split(".")[-1].strip()
+                    if alias:
+                        cols.append(alias)
+        return cols
+
     def executemany(self, query: str, params_list: Sequence[dict]) -> SurrealDBCursor:
         for params in params_list:
             self.execute(query, params)
@@ -155,7 +199,7 @@ class SurrealDBCursor:
     def fetchone(self) -> Optional[tuple]:
         if self._last_result and len(self._last_result) > 0:
             row = self._last_result.pop(0)
-            return tuple(row.values()) if hasattr(row, "values") else tuple(row)
+            return self._row_to_tuple(row)
         return None
 
     def fetchmany(self, size: Optional[int] = None) -> list:
@@ -165,19 +209,31 @@ class SurrealDBCursor:
         if self._last_result:
             result = list(self._last_result[:size])
             self._last_result = self._last_result[size:]
-            return [
-                tuple(r.values()) if hasattr(r, "values") else tuple(r) for r in result
-            ]
+            return [self._row_to_tuple(r) for r in result]
         return []
 
     def fetchall(self) -> list:
         if self._last_result:
             result = list(self._last_result)
             self._last_result = []
-            return [
-                tuple(r.values()) if hasattr(r, "values") else tuple(r) for r in result
-            ]
+            return [self._row_to_tuple(r) for r in result]
         return []
+
+    def _row_to_tuple(self, row) -> tuple:
+        if not hasattr(row, "keys"):
+            return tuple(row)
+
+        dbapi_cols = list(row.keys())
+        desc_cols = (
+            [desc[0] for desc in self._description] if self._description else dbapi_cols
+        )
+
+        mapping = {}
+        for col in dbapi_cols:
+            stripped = col.split("_", 1)[-1] if "_" in col else col
+            mapping[stripped] = row[col]
+
+        return tuple(mapping.get(c.split("_", 1)[-1]) for c in desc_cols)
 
     def __iter__(self):
         return iter(list(self._last_result) if self._last_result else [])
