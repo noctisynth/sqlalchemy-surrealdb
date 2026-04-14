@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sqlalchemy.sql.compiler import SQLCompiler, DDLCompiler
+from sqlalchemy.sql.compiler import SQLCompiler, DDLCompiler, TypeCompiler
 
 from typing import Any, Tuple
 from sqlalchemy.engine import default, reflection
@@ -8,7 +8,7 @@ from sqlalchemy.dialects import registry
 from sqlalchemy.sql import compiler
 
 
-class SurrealDBTypeCompiler(default.DefaultDialect):
+class SurrealDBTypeCompiler(TypeCompiler):
     def visit_INTEGER(self, type_: Any, **kwargs: Any) -> str:
         return "INT"
 
@@ -153,13 +153,17 @@ class SurrealDBCompiler(SQLCompiler):
         return text
 
     def visit_select(self, *args, **kwargs: Any) -> str:
+        import re
+
         sql = super().visit_select(*args, **kwargs)
 
         if "FROM" not in sql.upper():
-            import re
-
             sql = re.sub(r"\s+as\s+\w+", "", sql, flags=re.IGNORECASE)
             sql = "RETURN " + sql.replace("SELECT ", "").strip()
+        else:
+            # SurrealDB doesn't support table prefix in column names
+            # Convert "table.column" to just "column"
+            sql = re.sub(r"\b(\w+)\.(\w+)\b", r"\2", sql)
 
         return sql
 
@@ -183,7 +187,8 @@ class SurrealDBDDLCompiler(DDLCompiler):
 
 
 class SurrealDBExecutionContext(default.DefaultExecutionContext):
-    pass
+    def post_exec(self) -> None:
+        pass
 
 
 class SurrealDBInspector(reflection.Inspector):

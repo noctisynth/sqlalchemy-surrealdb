@@ -1,21 +1,39 @@
-from sqlalchemy.types import UserDefinedType
+from sqlalchemy import Dialect, TypeDecorator, String
+from sqlalchemy.types import TypeEngine
+from typing import Any, Optional
+
 from surrealdb import RecordID
-from sqlalchemy import types
 
-class RecordIDType(UserDefinedType):
-    cache_ok = True
 
-    def __init__(self, table_name=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class SurrealRecordID(TypeDecorator):
+    impl = String
+    cache_ok = False
 
-    def bind_processor(self, dialect):
-        def process(value: str) -> RecordID:
+    def process_bind_param(
+        self, value: Optional[Any], dialect: Dialect
+    ) -> Optional[RecordID]:
+        if value is None:
+            return None
+
+        if isinstance(value, RecordID):
+            return value
+
+        print(value)
+        try:
             return RecordID.parse(value)
+        except ValueError:
+            return value
 
-        return process
+    def process_result_value(
+        self, value: Optional[RecordID], dialect: Dialect
+    ) -> Optional[str]:
+        if value is None:
+            return None
 
-    def result_processor(self, dialect, coltype):
-        def process(value):
-            return str(value)
+        return str(value)
 
-        return process
+    def coerce_compared_value(self, op: Any, value: Any) -> TypeEngine:
+        if value is not None:
+            if isinstance(value, RecordID):
+                return self
+        return super().coerce_compared_value(op, value)

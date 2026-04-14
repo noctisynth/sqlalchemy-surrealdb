@@ -1,5 +1,9 @@
 from __future__ import annotations
-from surrealdb import BlockingWsSurrealConnection, Surreal, BlockingHttpSurrealConnection
+from surrealdb import (
+    BlockingWsSurrealConnection,
+    Surreal,
+    BlockingHttpSurrealConnection,
+)
 
 from typing import Any, Optional, Sequence, Union
 
@@ -54,6 +58,7 @@ class SurrealDBConnection:
         self._namespace = namespace
         self._database = database
         self._closed = False
+        self._last_cursor: Optional[SurrealDBCursor] = None
 
     def close(self) -> None:
         self._db.close()
@@ -66,7 +71,9 @@ class SurrealDBConnection:
         pass
 
     def cursor(self) -> SurrealDBCursor:
-        return SurrealDBCursor(self._db)
+        cursor = SurrealDBCursor(self._db)
+        self._last_cursor = cursor
+        return cursor
 
     @property
     def isolation_level(self) -> Optional[str]:
@@ -86,7 +93,7 @@ class SurrealDBCursor:
         self._arraysize = 1
 
     @property
-    def description(self) -> Optional[Sequence[Any]]:
+    def description(self) -> Optional[tuple]:
         return self._description
 
     @property
@@ -121,9 +128,22 @@ class SurrealDBCursor:
             self._last_result = []
             self._rowcount = 0
 
-        self._description: Optional[tuple] = (
-            (("value", 0, 0, 0, 0, 0, 0),) if self._rowcount == 1 else None
-        )
+        # Set description BEFORE returning
+        if self._last_result and len(self._last_result) > 0:
+            first_row = self._last_result[0]
+            if hasattr(first_row, "keys"):
+                self._description = tuple(
+                    (name, 0, 0, 0, 0, 0, 0)
+                    for name in first_row.keys()  # type:ignore
+                )
+            elif isinstance(first_row, dict):
+                self._description = tuple(
+                    (name, 0, 0, 0, 0, 0, 0) for name in first_row.keys()
+                )
+            else:
+                self._description = None
+        else:
+            self._description = None
 
         return self
 
