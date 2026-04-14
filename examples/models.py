@@ -41,18 +41,17 @@ class Post(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
-engine = create_engine(
-    "surrealdb://root:root@127.0.0.1:5070/test",
-    connect_args={"expire_on_commit": False},
-)
-Base.metadata.create_all(bind=engine)
-
-SessionLocal = sessionmaker(
-    bind=engine, autocommit=False, autoflush=False, expire_on_commit=False
-)
-
-
 def test_crud():
+    engine = create_engine(
+        "surrealdb://root:root@127.0.0.1:5070/test",
+        connect_args={"expire_on_commit": False},
+    )
+    Base.metadata.create_all(bind=engine)
+
+    SessionLocal = sessionmaker(
+        bind=engine, autocommit=False, autoflush=False, expire_on_commit=False
+    )
+
     session = SessionLocal()
     try:
         print("=== 清理数据 ===")
