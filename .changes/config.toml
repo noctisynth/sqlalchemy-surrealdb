@@ -1,0 +1,29 @@
+[branches]
+base = "main"
+release = "release"
+
+[tags]
+chore = "Chores"
+feat = "New Features"
+fix = "Bug Fixes"
+perf = "Performance Improvements"
+refactor = "Refactors"
+
+[packages.sqlalchemy-surrealdb]
+path = "."
+resolver = "python"
+
+[[resolver.python.publish]]
+command = "uv"
+args = ["publish"]
+
+[[resolver.python.post-version]]
+command = "uv"
+args = ["sync", "--dev"]
+dry_run = true
+
+[resolver.python.pre-check]
+url = "https://pypi.org/pypi/{{ package.name }}/{{ package.version }}/json"
+
+[resolver.python.pre-check.extra-headers]
+User-Agent = "Semifold 0.2.14"
