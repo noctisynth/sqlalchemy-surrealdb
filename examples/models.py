@@ -2,7 +2,7 @@ from typing import Union
 from surrealdb import RecordID
 from sqlalchemy_surrealdb.types import SurrealRecordID
 from sqlalchemy import Column, String, DateTime, ForeignKey, create_engine, Integer
-from sqlalchemy.orm import relationship, declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime, timezone
 import uuid
 
@@ -160,9 +160,12 @@ def test_crud():
         print("\n=== Delete (删除) ---")
         print("\n--- 单条删除 ---")
         user = session.query(User).filter(User.username == "eve").first()
+        if not user:
+            print("用户不存在")
+            return
         session.delete(user)
         session.commit()
-        print(f"删除用户: eve")
+        print(f"删除用户: {user.username}")
 
         print("\n=== 最终数据 ===")
         all_users = session.query(User).order_by(User.age).all()

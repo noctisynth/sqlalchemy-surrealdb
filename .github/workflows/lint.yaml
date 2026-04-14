@@ -1,4 +1,4 @@
-name: Semifold CI
+name: Code Lint
 on:
   push:
     branches: [main]
