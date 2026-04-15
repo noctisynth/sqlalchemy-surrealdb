@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Union
+from typing import Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.orm import Mapped, declarative_base, mapped_column, sessionmaker
 from surrealdb import RecordID
 
 from sqlalchemy_surrealdb.types import SurrealRecordID
@@ -14,15 +14,19 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = "users"
 
-    id: Union[Column[RecordID], RecordID] = Column(
+    id: Mapped[RecordID] = mapped_column(
         SurrealRecordID,
         primary_key=True,
         default=lambda: RecordID("users", uuid.uuid4().hex),
     )
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    email = Column(String(120), unique=True, nullable=False)
-    age = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    username: Mapped[str] = mapped_column(
+        String(50), unique=True, nullable=False, index=True
+    )
+    email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    age: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
 
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', email='{self.email}')>"
@@ -31,15 +35,17 @@ class User(Base):
 class Post(Base):
     __tablename__ = "posts"
 
-    id: Column[RecordID] = Column(
+    id: Mapped[RecordID] = mapped_column(
         SurrealRecordID,
         primary_key=True,
         default=lambda: RecordID("posts", uuid.uuid4().hex),
     )
-    title: Column[str] = Column(String(200), nullable=False)
-    content: Column[str] = Column(String)
-    user_id = Column(SurrealRecordID, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.now)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    content: Mapped[Optional[str]] = mapped_column(String)
+    user_id: Mapped[Optional[RecordID]] = mapped_column(
+        SurrealRecordID, ForeignKey("users.id")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
 def test_crud():
