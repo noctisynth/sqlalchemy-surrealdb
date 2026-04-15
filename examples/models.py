@@ -4,9 +4,8 @@ from typing import Optional
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import Mapped, declarative_base, mapped_column, sessionmaker
-from surrealdb import RecordID
-
 from sqlalchemy_surrealdb.types import SurrealRecordID
+from surrealdb import RecordID
 
 Base = declarative_base()
 
@@ -50,8 +49,7 @@ class Post(Base):
 
 def test_crud():
     engine = create_engine(
-        "surrealdb://root:root@127.0.0.1:5070/test",
-        connect_args={"expire_on_commit": False},
+        "surrealdb://root:root@127.0.0.1:5070/test/test",
     )
     Base.metadata.create_all(bind=engine)
 

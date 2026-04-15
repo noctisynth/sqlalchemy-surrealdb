@@ -1,14 +1,15 @@
 from __future__ import annotations
-from sqlalchemy.sql.compiler import SQLCompiler, DDLCompiler, TypeCompiler
 
-from typing import Any, Tuple
-from sqlalchemy.engine import default, reflection
-from sqlalchemy import exc
+from typing import Any, Type
+
+from sqlalchemy import URL, Pool, exc
 from sqlalchemy.dialects import registry
+from sqlalchemy.engine import ConnectArgsType, default, reflection
 from sqlalchemy.sql import compiler
+from sqlalchemy.sql.compiler import DDLCompiler, GenericTypeCompiler, SQLCompiler
 
 
-class SurrealDBTypeCompiler(TypeCompiler):
+class SurrealDBTypeCompiler(GenericTypeCompiler):
     def visit_INTEGER(self, type_: Any, **kwargs: Any) -> str:
         return "INT"
 
@@ -221,7 +222,7 @@ class SurrealDBDialect(default.DefaultDialect):
 
     supports_statement_cache = True
     supports_alter = True
-    supports_comments = False
+    supports_comments = True
     supports_constraint_comments = False
     supports_native_boolean = True
     supports_native_decimal = False
@@ -235,7 +236,9 @@ class SurrealDBDialect(default.DefaultDialect):
     statement_compiler = SurrealDBCompiler
     ddl_compiler = SurrealDBDDLCompiler
     type_compiler_cls = SurrealDBTypeCompiler
+
     preparer = SurrealDBIdentifierPreparer
+
     execution_ctx_cls = SurrealDBExecutionContext
     inspector = SurrealDBInspector
 
@@ -258,10 +261,10 @@ class SurrealDBDialect(default.DefaultDialect):
         return dbapi.DatabaseError
 
     @classmethod
-    def get_pool_class(cls, url: Any):
-        from sqlalchemy.pool import NullPool
+    def get_pool_class(cls, url: URL) -> Type[Pool]:
+        from sqlalchemy.pool import QueuePool
 
-        return NullPool
+        return QueuePool
 
     @classmethod
     def import_dbapi(cls) -> Any:
@@ -269,30 +272,25 @@ class SurrealDBDialect(default.DefaultDialect):
 
         return surrealdb_module
 
-    def create_connect_args(self, url: Any) -> Tuple[Tuple[()], dict]:
+    def create_connect_args(self, url: URL) -> ConnectArgsType:
         opts = url.translate_connect_args()
+        opts.update(url.query)
 
-        host = url.host or "localhost"
-        port = url.port or 8000
-        scheme = "ws"
+        valid_schemes = ["ws", "wss", "http", "https", "mem", "file", "surrealkv"]
+        scheme = opts.get("scheme")
+        if scheme and scheme not in valid_schemes:
+            raise exc.ArgumentError(f"Invalid or unsupported scheme: {scheme}")
+        opts["scheme"] = scheme or "ws"
 
-        if url.drivername and url.drivername.startswith("surrealdb+"):
-            scheme = "ws"
-        else:
-            scheme = "ws"
-
-        full_url = f"{scheme}://{host}:{port}"
-
-        return (
-            (),
-            {
-                "url": full_url,
-                "username": opts.get("username"),
-                "password": opts.get("password"),
-                "namespace": url.database,
-                "database": url.database,
-            },
+        path = url.database or ""
+        opts["database"] = (
+            path.split("/")[0] if len(path.split("/")) > 0 else "surrealdb"
         )
+        opts["namespace"] = (
+            path.split("/")[1] if len(path.split("/")) > 1 else "default"
+        )
+
+        return ((), opts)
 
     def do_execute(
         self, cursor: Any, statement: Any, parameters: Any, context: Any = None
@@ -375,7 +373,7 @@ class SurrealDBDialect(default.DefaultDialect):
         return columns
 
     def _parse_column_info(self, field_name: str, field_def: str) -> dict:
-        from sqlalchemy import Integer, Float, String, Boolean, DateTime, TEXT
+        from sqlalchemy import TEXT, Boolean, DateTime, Float, Integer, String
 
         col_type = String()
 

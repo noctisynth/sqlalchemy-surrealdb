@@ -1,11 +1,12 @@
 from __future__ import annotations
-from surrealdb import (
-    BlockingWsSurrealConnection,
-    Surreal,
-    BlockingHttpSurrealConnection,
-)
 
 from typing import Any, Optional, Sequence, Union
+
+from surrealdb import (
+    BlockingHttpSurrealConnection,
+    BlockingWsSurrealConnection,
+    Surreal,
+)
 
 SurrealType = Union[BlockingWsSurrealConnection, BlockingHttpSurrealConnection]
 
@@ -70,7 +71,7 @@ class SurrealDBConnection:
     def rollback(self) -> None:
         pass
 
-    def cursor(self) -> SurrealDBCursor:
+    def cursor(self, *args: Any, **kwargs: Any) -> SurrealDBCursor:
         cursor = SurrealDBCursor(self._db)
         self._last_cursor = cursor
         return cursor
@@ -247,14 +248,16 @@ class SurrealDBCursor:
 
 
 def connect(
-    url: str,
-    username: Optional[str] = None,
-    password: Optional[str] = None,
-    namespace: Optional[str] = None,
-    database: Optional[str] = None,
+    username: str = "root",
+    password: str = "root",
+    namespace: str = "default",
+    database: str = "default",
+    scheme: str = "ws",
+    host: str = "localhost",
+    port: int = 8000,
     **kwargs: Any,
 ) -> SurrealDBConnection:
-    db = Surreal(url)
+    db = Surreal(f"{scheme}://{host}:{port}")
 
     if namespace and database:
         db.use(namespace, database)
@@ -269,15 +272,11 @@ apilevel = "2.0"
 threadsafety = 2
 paramstyle = "named"
 
-version_info = (1, 0, 0)
-__version__ = "0.1.0"
-
 __all__ = [
     "connect",
     "apilevel",
     "threadsafety",
     "paramstyle",
-    "version_info",
     "SurrealDBConnection",
     "SurrealDBCursor",
     "Error",
