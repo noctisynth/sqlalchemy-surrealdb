@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Optional, Type
 
+import sqlalchemy
 from sqlalchemy import URL, Pool, exc
 from sqlalchemy.dialects import registry
 from sqlalchemy.engine import ConnectArgsType, default, reflection
-from sqlalchemy.schema import CreateTable
+from sqlalchemy.schema import CreateIndex, CreateTable, DropTable
 from sqlalchemy.sql import compiler
 from sqlalchemy.sql.compiler import DDLCompiler, GenericTypeCompiler, SQLCompiler
 
@@ -303,7 +304,9 @@ class SurrealDBCompiler(SQLCompiler):
 
 
 class SurrealDBDDLCompiler(DDLCompiler):
-    def get_column_specification(self, column: Any, **kwargs: Any) -> str:
+    def get_column_specification(
+        self, column: sqlalchemy.schema.Column, **kwargs: Any
+    ) -> str:
         colspec = self.preparer.format_column(column)
 
         col_type = self.dialect.type_compiler.process(column.type)
@@ -367,19 +370,22 @@ class SurrealDBDDLCompiler(DDLCompiler):
 
         return "; ".join(parts)
 
-    def visit_drop_table(self, drop: Any, **kwargs: Any) -> str:
+    def visit_drop_table(self, drop: DropTable, **kwargs: Any) -> str:
         return f"REMOVE TABLE {self.preparer.format_table(drop.element)}"
 
     def visit_create_index(
         self,
-        create: Any,
+        create: CreateIndex,
         include_schema: bool = False,
         include_table_schema: bool = True,
         **kwargs: Any,
     ) -> str:
         index = create.element
         preparer = self.preparer
-        table_name = preparer.format_table(index.table)
+
+        if index.table is None:
+            return ""
+        table_name = preparer.format_table(index.table, use_schema=include_table_schema)
 
         idx_name = index.name
         if idx_name is None:

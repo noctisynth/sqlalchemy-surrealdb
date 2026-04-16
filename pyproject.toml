@@ -13,6 +13,8 @@ surrealdb = "sqlalchemy_surrealdb.base:SurrealDBDialect"
 
 [dependency-groups]
 dev = [
+  "pytest>=8.0.0",
+  "pytest-asyncio>=0.23.0",
   "sqlalchemy>=2.0.49",
 ]
 
@@ -20,7 +22,16 @@ dev = [
 requires = ["uv_build>=0.11.6,<0.12"]
 build-backend = "uv_build"
 
+[tool.pytest]
+markers = [
+  "integration: marks tests as integration tests requiring SurrealDB",
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
 [tool.uv.workspace]
 members = [
-    "examples/fastapi-example",
+  "examples/fastapi-example",
 ]
