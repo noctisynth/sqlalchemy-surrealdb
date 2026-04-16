@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence, Union
+from typing import Any, Optional, Sequence
 
-from surrealdb import (
-    BlockingHttpSurrealConnection,
-    BlockingWsSurrealConnection,
-    Surreal,
-)
+from surrealdb import Surreal
 
-SurrealType = Union[BlockingWsSurrealConnection, BlockingHttpSurrealConnection]
+SurrealConnection = Any
 
 
 class Error(Exception):
@@ -45,13 +41,13 @@ class NotSupportedError(DatabaseError):
 
 Warning = None
 InterfaceError = DatabaseError
-Connection = DatabaseError
+ConnectionError = DatabaseError
 
 
 class SurrealDBConnection:
     def __init__(
         self,
-        db: SurrealType,
+        db: Any,
         namespace: Optional[str] = None,
         database: Optional[str] = None,
     ):
@@ -59,39 +55,59 @@ class SurrealDBConnection:
         self._namespace = namespace
         self._database = database
         self._closed = False
-        self._last_cursor: Optional[SurrealDBCursor] = None
+        self._in_transaction = False
 
     def close(self) -> None:
-        self._db.close()
-        self._closed = True
+        if not self._closed:
+            self._db.close()
+            self._closed = True
+
+    def begin(self) -> None:
+        if not self._in_transaction:
+            self._in_transaction = True
 
     def commit(self) -> None:
-        pass
+        if self._in_transaction:
+            try:
+                self._db.query("COMMIT")
+            finally:
+                self._in_transaction = False
 
     def rollback(self) -> None:
-        pass
+        if self._in_transaction:
+            try:
+                self._db.query("CANCEL")
+            finally:
+                self._in_transaction = False
 
-    def cursor(self, *args: Any, **kwargs: Any) -> SurrealDBCursor:
-        cursor = SurrealDBCursor(self._db)
-        self._last_cursor = cursor
-        return cursor
+    def cursor(self) -> SurrealDBCursor:
+        return SurrealDBCursor(self._db)
 
     @property
     def isolation_level(self) -> Optional[str]:
-        return None
+        return "READ COMMITTED"
 
     @isolation_level.setter
     def isolation_level(self, value: Optional[str]) -> None:
         pass
 
+    def __del__(self):
+        if not self._closed:
+            try:
+                self.close()
+            except Exception:
+                pass
+
 
 class SurrealDBCursor:
-    def __init__(self, db: SurrealType) -> None:
+    def __init__(self, db: Any) -> None:
         self._db = db
         self._description: Optional[tuple] = None
         self._rowcount = -1
         self._last_result: list = []
         self._arraysize = 1
+        self._current_position = 0
+        self._result_columns: Optional[list] = None
 
     @property
     def description(self) -> Optional[tuple]:
@@ -115,64 +131,11 @@ class SurrealDBCursor:
 
         result = self._db.query(query, params)
 
-        if result is not None:
-            if isinstance(result, list):
-                self._last_result = result
-                self._rowcount = len(result)
-            elif isinstance(result, dict):
-                self._last_result = [result]
-                self._rowcount = 1
-            else:
-                self._last_result = [{"value": result}]
-                self._rowcount = 1
-        else:
-            self._last_result = []
-            self._rowcount = 0
-
-        # Set description BEFORE returning
-        # Extract column aliases from SQL to preserve order
-        col_order = self._extract_columns_from_query(query)
-        if self._last_result and len(self._last_result) > 0:
-            first_row = self._last_result[0]
-            if hasattr(first_row, "keys"):
-                db_keys = list(first_row.keys())  # type: ignore
-                if col_order:
-                    ordered = []
-                    for name in col_order:
-                        if name in db_keys:
-                            ordered.append(name)
-                        else:
-                            stripped = name.replace("users_", "").replace("posts_", "")
-                            found = next(
-                                (
-                                    k
-                                    for k in db_keys
-                                    if k.replace("users_", "").replace("posts_", "")
-                                    == stripped
-                                ),
-                                name,
-                            )
-                            ordered.append(found)
-                    self._description = tuple(
-                        (name, 0, 0, 0, 0, 0, 0) for name in ordered
-                    )
-                else:
-                    self._description = tuple(
-                        (name, 0, 0, 0, 0, 0, 0)
-                        for name in first_row.keys()  # type:ignore
-                    )
-            elif isinstance(first_row, dict):
-                self._description = tuple(
-                    (name, 0, 0, 0, 0, 0, 0) for name in first_row.keys()
-                )
-            else:
-                self._description = None
-        else:
-            self._description = None
+        self._process_result(result, query)
 
         return self
 
-    def _extract_columns_from_query(self, query: str) -> list:
+    def _parse_select_columns(self, query: str) -> list:
         import re
 
         cols = []
@@ -183,14 +146,68 @@ class SurrealDBCursor:
             cols_part = select_match.group(1)
             for col in cols_part.split(","):
                 col = col.strip()
-                match = re.search(r"AS\s+(\w+)", col, re.IGNORECASE)
-                if match:
-                    cols.append(match.group(1))
+                as_match = re.search(r"\s+AS\s+(\w+)", col, re.IGNORECASE)
+                if as_match:
+                    cols.append(as_match.group(1))
                 else:
                     alias = col.split(".")[-1].strip()
+                    if alias == "*":
+                        cols = []
+                        break
                     if alias:
                         cols.append(alias)
         return cols
+
+    def _process_result(self, result: Any, query: str) -> None:
+        if result is None:
+            self._last_result = []
+            self._rowcount = 0
+            self._description = None
+            return
+
+        expected_cols = self._parse_select_columns(query)
+
+        if isinstance(result, list):
+            self._last_result = result
+            self._rowcount = len(result)
+        elif isinstance(result, dict):
+            self._last_result = [result]
+            self._rowcount = 1
+        else:
+            self._last_result = [{"value": result}]
+            self._rowcount = 1
+
+        if self._last_result:
+            first_row = self._last_result[0]
+            self._description = self._extract_description(first_row, expected_cols)
+            if expected_cols:
+                self._result_columns = expected_cols
+            else:
+                self._result_columns = None
+        else:
+            self._description = None
+            self._result_columns = None
+
+    def _extract_description(
+        self, row: Any, expected_cols: Optional[list] = None
+    ) -> Optional[tuple]:
+        if expected_cols:
+            return tuple(
+                (name, None, None, None, None, None, None) for name in expected_cols
+            )
+        if hasattr(row, "keys"):
+            keys = list(row.keys())
+            return tuple((name, None, None, None, None, None, None) for name in keys)
+        elif isinstance(row, dict):
+            return tuple(
+                (name, None, None, None, None, None, None) for name in row.keys()
+            )
+        elif isinstance(row, (list, tuple)):
+            return tuple(
+                (f"col_{i}", None, None, None, None, None, None)
+                for i in range(len(row))
+            )
+        return None
 
     def executemany(self, query: str, params_list: Sequence[dict]) -> SurrealDBCursor:
         for params in params_list:
@@ -198,8 +215,9 @@ class SurrealDBCursor:
         return self
 
     def fetchone(self) -> Optional[tuple]:
-        if self._last_result and len(self._last_result) > 0:
-            row = self._last_result.pop(0)
+        if self._last_result and self._current_position < len(self._last_result):
+            row = self._last_result[self._current_position]
+            self._current_position += 1
             return self._row_to_tuple(row)
         return None
 
@@ -207,44 +225,69 @@ class SurrealDBCursor:
         if size is None:
             size = self._arraysize
 
-        if self._last_result:
-            result = list(self._last_result[:size])
-            self._last_result = self._last_result[size:]
-            return [self._row_to_tuple(r) for r in result]
-        return []
+        results = []
+        for _ in range(size):
+            row = self.fetchone()
+            if row is None:
+                break
+            results.append(row)
+        return results
 
     def fetchall(self) -> list:
-        if self._last_result:
-            result = list(self._last_result)
-            self._last_result = []
-            return [self._row_to_tuple(r) for r in result]
-        return []
+        results = []
+        while True:
+            row = self.fetchone()
+            if row is None:
+                break
+            results.append(row)
+        return results
 
-    def _row_to_tuple(self, row) -> tuple:
-        if not hasattr(row, "keys"):
-            return tuple(row)
+    def _row_to_tuple(self, row: Any) -> tuple:
+        if not row:
+            return ()
 
-        dbapi_cols = list(row.keys())
-        desc_cols = (
-            [desc[0] for desc in self._description] if self._description else dbapi_cols
-        )
+        if hasattr(row, "values"):
+            values = list(row.values())
+        elif isinstance(row, dict):
+            values = list(row.values())
+        elif isinstance(row, (list, tuple)):
+            values = list(row)
+        else:
+            return (row,)
 
-        mapping = {}
-        for col in dbapi_cols:
-            stripped = col.split("_", 1)[-1] if "_" in col else col
-            mapping[stripped] = row[col]
+        if self._result_columns and isinstance(row, dict):
+            col_map = dict(zip(row.keys(), values))
+            ordered_values = [col_map.get(col) for col in self._result_columns]
+            return (
+                tuple(ordered_values)
+                if all(
+                    v is not None or k in col_map
+                    for k, v in zip(self._result_columns, ordered_values)
+                )
+                else tuple(values)
+            )
 
-        return tuple(mapping.get(c.split("_", 1)[-1]) for c in desc_cols)
+        return tuple(values)
 
     def __iter__(self):
-        return iter(list(self._last_result) if self._last_result else [])
+        return self
+
+    def __next__(self):
+        row = self.fetchone()
+        if row is None:
+            raise StopIteration
+        return row
 
     @property
     def _fetchable(self):
         return True
 
     def close(self) -> None:
-        pass
+        self._last_result = []
+        self._current_position = 0
+
+    def __del__(self):
+        self.close()
 
 
 def connect(
@@ -257,10 +300,10 @@ def connect(
     port: int = 8000,
     **kwargs: Any,
 ) -> SurrealDBConnection:
-    db = Surreal(f"{scheme}://{host}:{port}")
+    url = f"{scheme}://{host}:{port}"
+    db = Surreal(url)
 
-    if namespace and database:
-        db.use(namespace, database)
+    db.use(namespace, database)
 
     if username and password:
         db.signin({"username": username, "password": password})

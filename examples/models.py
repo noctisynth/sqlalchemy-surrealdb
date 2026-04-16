@@ -50,6 +50,7 @@ class Post(Base):
 def test_crud():
     engine = create_engine(
         "surrealdb://root:root@127.0.0.1:5070/test/test",
+        connect_args={"confirm_deleted_rows": False},
     )
     Base.metadata.create_all(bind=engine)
 
@@ -144,8 +145,7 @@ def test_crud():
         if not user:
             print("用户不存在")
             return
-        user_id_str = str(user.id)
-        posts = session.query(Post).filter(Post.user_id == user_id_str).all()
+        posts = session.query(Post).filter(Post.user_id == user.id).all()
         print(f"Alice的文章数: {len(posts)}")
         for p in posts:
             print(f"  - {p.title}")

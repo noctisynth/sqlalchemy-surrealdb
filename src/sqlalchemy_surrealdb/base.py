@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Type
+from typing import Any, Optional, Type
 
 from sqlalchemy import URL, Pool, exc
 from sqlalchemy.dialects import registry
@@ -10,55 +10,61 @@ from sqlalchemy.sql.compiler import DDLCompiler, GenericTypeCompiler, SQLCompile
 
 
 class SurrealDBTypeCompiler(GenericTypeCompiler):
-    def visit_INTEGER(self, type_: Any, **kwargs: Any) -> str:
+    def visit_integer(self, type_: Any, **kwargs: Any) -> str:
         return "INT"
 
-    def visit_BIGINT(self, type_: Any, **kwargs: Any) -> str:
+    def visit_bigint(self, type_: Any, **kwargs: Any) -> str:
         return "BIGINT"
 
-    def visit_SMALLINT(self, type_: Any, **kwargs: Any) -> str:
+    def visit_smallinteger(self, type_: Any, **kwargs: Any) -> str:
         return "INT"
 
-    def visit_FLOAT(self, type_: Any, **kwargs: Any) -> str:
+    def visit_float(self, type_: Any, **kwargs: Any) -> str:
         return "FLOAT"
 
-    def visit_DOUBLE(self, type_: Any, **kwargs: Any) -> str:
+    def visit_double(self, type_: Any, **kwargs: Any) -> str:
         return "FLOAT"
 
-    def visit_NUMERIC(self, type_: Any, **kwargs: Any) -> str:
-        return "FLOAT"
+    def visit_numeric(self, type_: Any, **kwargs: Any) -> str:
+        return "DECIMAL" if type_.precision else "FLOAT"
 
-    def visit_DECIMAL(self, type_: Any, **kwargs: Any) -> str:
-        return "FLOAT"
+    def visit_decimal(self, type_: Any, **kwargs: Any) -> str:
+        return "DECIMAL"
 
-    def visit_STRING(self, type_: Any, **kwargs: Any) -> str:
+    def visit_string(self, type_: Any, **kwargs: Any) -> str:
         return "STRING"
 
-    def visit_VARCHAR(self, type_: Any, **kwargs: Any) -> str:
+    def visit_varchar(self, type_: Any, **kwargs: Any) -> str:
         return "STRING"
 
-    def visit_TEXT(self, type_: Any, **kwargs: Any) -> str:
+    def visit_text(self, type_: Any, **kwargs: Any) -> str:
         return "STRING"
 
-    def visit_BOOLEAN(self, type_: Any, **kwargs: Any) -> str:
+    def visit_boolean(self, type_: Any, **kwargs: Any) -> str:
         return "BOOL"
 
-    def visit_DATE(self, type_: Any, **kwargs: Any) -> str:
+    def visit_date(self, type_: Any, **kwargs: Any) -> str:
         return "DATETIME"
 
-    def visit_DATETIME(self, type_: Any, **kwargs: Any) -> str:
+    def visit_datetime(self, type_: Any, **kwargs: Any) -> str:
         return "DATETIME"
 
-    def visit_TIMESTAMP(self, type_: Any, **kwargs: Any) -> str:
+    def visit_timestamp(self, type_: Any, **kwargs: Any) -> str:
         return "DATETIME"
 
-    def visit_BINARY(self, type_: Any, **kwargs: Any) -> str:
+    def visit_binary(self, type_: Any, **kwargs: Any) -> str:
         return "BINARY"
 
-    def visit_BLOB(self, type_: Any, **kwargs: Any) -> str:
+    def visit_large_binary(self, type_: Any, **kwargs: Any) -> str:
         return "BINARY"
 
-    def visit_JSON(self, type_: Any, **kwargs: Any) -> str:
+    def visit_json(self, type_: Any, **kwargs: Any) -> str:
+        return "OBJECT"
+
+    def visit_array(self, type_: Any, **kwargs: Any) -> str:
+        return "ARRAY"
+
+    def visit_object(self, type_: Any, **kwargs: Any) -> str:
         return "OBJECT"
 
 
@@ -69,67 +75,95 @@ class SurrealDBIdentifierPreparer(compiler.IdentifierPreparer):
         "ANY",
         "AS",
         "ASC",
+        "BEGIN",
         "BETWEEN",
         "BREAK",
+        "BY",
         "CASE",
         "CATCH",
-        "COLUMN",
+        "COLUMNS",
         "CONCAT",
+        "CONTENT",
         "CONTINUE",
         "CREATE",
         "DATABASE",
+        "DATETIME",
         "DEFINE",
         "DELETE",
         "DESC",
         "DISTINCT",
         "ELSE",
         "END",
+        "EVENT",
+        "EXISTS",
         "EXPLAIN",
         "FETCH",
         "FIELD",
+        "FIELDS",
         "FLEX",
         "FOR",
-        "FOREIGN",
         "FROM",
         "FUNCTION",
         "GRANT",
         "GROUP",
         "IF",
         "INDEX",
+        "INFO",
         "INSERT",
         "INTO",
+        "KILL",
+        "LET",
         "LIMIT",
-        "MATH",
+        "LIVE",
         "MERGE",
+        "NO",
         "NOT",
         "NULL",
         "ON",
-        "ONLY",
         "OPTION",
         "ORDER",
+        "OVER",
+        "PARALLEL",
         "PASSWORD",
         "PERMISSIONS",
         "PRECISION",
+        "RANGE",
+        "READONLY",
         "RETURN",
         "SCHEMA",
         "SELECT",
         "SET",
         "SHOW",
-        "SORT",
+        "SIGNED",
+        "SLEEP",
+        "SNAPSHOT",
         "SQL",
         "START",
         "TABLE",
         "THEN",
         "TYPE",
-        "UNION",
         "UNIQUE",
+        "UNLESS",
         "UPDATE",
         "USE",
         "USER",
         "VALUES",
+        "VERSION",
         "WHEN",
         "WHERE",
+        "WITH",
+        "WRITABLE",
     }
+
+    def quote(self, ident: str, force: bool = False) -> str:
+        if not ident:
+            return ident
+
+        if self._requires_quotes(ident):
+            if not force and ident in self.reserved_words:
+                return ident
+            return f"`{ident}`"
+        return ident
 
 
 class SurrealDBCompiler(SQLCompiler):
@@ -138,60 +172,139 @@ class SurrealDBCompiler(SQLCompiler):
         self.bindtemplate = "$%(name)s"
         self.compilation_bindtemplate = "$%(name)s"
 
-    def bindparam_string(self, name, *args, **kwargs):
+    def bindparam_string(
+        self,
+        name: str,
+        post_compile: bool = False,
+        expanding: bool = False,
+        escaped_from: Optional[str] = None,
+        bindparam_type: Any = None,
+        accumulate_bind_names: Any = None,
+        visited_bindparam: Any = None,
+        **kw: Any,
+    ) -> str:
         return "$" + name
 
-    def visit_textclause(self, textclause, *args, **kwargs) -> str:
+    def visit_column(
+        self,
+        column: Any,
+        add_to_result_map: Any = None,
+        include_table: bool = True,
+        result_map_targets: Any = (),
+        ambiguous_table_name_map: Any = None,
+        **kwargs: Any,
+    ) -> str:
+        return super().visit_column(
+            column,
+            add_to_result_map=add_to_result_map,
+            include_table=False,
+            result_map_targets=result_map_targets,
+            ambiguous_table_name_map=ambiguous_table_name_map,
+            **kwargs,
+        )
+
+    def visit_select(
+        self,
+        select_stmt: Any,
+        asfrom: bool = False,
+        insert_into: bool = False,
+        fromhints: Any = None,
+        compound_index: Any = None,
+        select_wraps_for: Any = None,
+        lateral: bool = False,
+        from_linter: Any = None,
+        **kwargs: Any,
+    ) -> str:
+        sql = super().visit_select(
+            select_stmt,
+            asfrom=asfrom,
+            insert_into=insert_into,
+            fromhints=fromhints,
+            compound_index=compound_index,
+            select_wraps_for=select_wraps_for,
+            lateral=lateral,
+            from_linter=from_linter,
+            **kwargs,
+        )
+
+        sql_upper = sql.upper()
+
+        if "FROM" not in sql_upper:
+            sql = "RETURN " + sql.replace("SELECT ", "").strip()
+
+        return sql
+
+    def visit_insert(
+        self,
+        insert_stmt: Any,
+        visited_bindparam: Any = None,
+        visiting_cte: Any = None,
+        **kw: Any,
+    ) -> str:
+        sql = super().visit_insert(
+            insert_stmt,
+            visited_bindparam=visited_bindparam,
+            visiting_cte=visiting_cte,
+            **kw,
+        )
+
+        if "RETURNING" in sql.upper():
+            sql = sql.replace("RETURNING", "RETURN")
+
+        return sql
+
+    def visit_update(
+        self, update_stmt: Any, visiting_cte: Any = None, **kw: Any
+    ) -> str:
+        sql = super().visit_update(update_stmt, visiting_cte=visiting_cte, **kw)
+
+        if "RETURNING" in sql.upper():
+            sql = sql.replace("RETURNING", "RETURN")
+
+        return sql
+
+    def visit_delete(
+        self, delete_stmt: Any, visiting_cte: Any = None, **kw: Any
+    ) -> str:
+        sql = super().visit_delete(delete_stmt, visiting_cte=visiting_cte, **kw)
+
+        if "RETURNING" in sql.upper():
+            sql = sql.replace("RETURNING", "RETURN")
+        elif "RETURN" not in sql.upper():
+            sql = sql + " RETURN BEFORE"
+
+        return sql
+
+    def visit_textclause(
+        self, textclause: Any, add_to_result_map: Any = None, **kw: Any
+    ) -> str:
         text = textclause.text
+
         text_upper = text.upper().strip()
 
         if text_upper.startswith("SELECT") and "FROM" not in text_upper:
-            import re
-
-            text = re.sub(r"\s+as\s+\w+", "", text, flags=re.IGNORECASE)
-            text = "RETURN " + text[6:].strip()
+            parts = text[6:].strip().split()
+            cleaned_parts = []
+            skip_next = False
+            for i, part in enumerate(parts):
+                if skip_next:
+                    skip_next = False
+                    continue
+                if part.upper() == "AS":
+                    skip_next = True
+                    continue
+                cleaned_parts.append(part)
+            text = "RETURN " + " ".join(cleaned_parts)
 
         return text
-
-    def visit_select(self, *args, **kwargs: Any) -> str:
-        import re
-
-        sql = super().visit_select(*args, **kwargs)
-
-        if "FROM" not in sql.upper():
-            sql = re.sub(r"\s+as\s+\w+", "", sql, flags=re.IGNORECASE)
-            sql = "RETURN " + sql.replace("SELECT ", "").strip()
-        else:
-            # SurrealDB doesn't support table prefix in column names
-            # Convert "table.column" to just "column"
-            sql = re.sub(r"\b(\w+)\.(\w+)\b", r"\2", sql)
-
-        return sql
-
-    def visit_update(self, update_stmt, *args, **kwargs: Any) -> str:
-        import re
-
-        sql = super().visit_update(update_stmt, *args, **kwargs)
-
-        # Remove table prefix from WHERE clause (e.g., "users.id" -> "id")
-        sql = re.sub(r"WHERE\s+\w+\.(\w+)\s*=", r"WHERE \1 =", sql)
-
-        return sql
-
-    def visit_delete(self, delete_stmt, *args, **kwargs: Any) -> str:
-        import re
-
-        sql = super().visit_delete(delete_stmt, *args, **kwargs)
-
-        # Remove table prefix from WHERE clause (e.g., "users.id" -> "id")
-        sql = re.sub(r"WHERE\s+\w+\.(\w+)\s*=", r"WHERE \1 =", sql)
-
-        return sql
 
 
 class SurrealDBDDLCompiler(DDLCompiler):
     def get_column_specification(self, column: Any, **kwargs: Any) -> str:
         colspec = self.preparer.format_column(column)
+
+        col_type = self.dialect.type_compiler.process(column.type)
+        colspec += f" TYPE {col_type}"
 
         if column.autoincrement:
             colspec += " FLEX"
@@ -199,12 +312,25 @@ class SurrealDBDDLCompiler(DDLCompiler):
         if column.server_default is not None:
             default = self.get_column_default_string(column)
             if default is not None:
-                colspec += " DEFAULT " + default
+                colspec += f" DEFAULT {default}"
 
         if not column.nullable:
             colspec += " NOT NULL"
 
         return colspec
+
+    def visit_create_table(self, create: Any, **kwargs: Any) -> str:
+        table = create.element
+        preparer = self.preparer
+
+        parts = []
+
+        parts.append(f"DEFINE TABLE {preparer.format_table(table)}")
+
+        return "; ".join(parts)
+
+    def visit_drop_table(self, drop: Any, **kwargs: Any) -> str:
+        return f"REMOVE TABLE {self.preparer.format_table(drop.element)}"
 
 
 class SurrealDBExecutionContext(default.DefaultExecutionContext):
@@ -225,11 +351,11 @@ class SurrealDBDialect(default.DefaultDialect):
     supports_comments = True
     supports_constraint_comments = False
     supports_native_boolean = True
-    supports_native_decimal = False
-    supports_native_json = False
+    supports_native_decimal = True
+    supports_native_json = True
     supports_schemas = False
     supports_sequences = False
-    supports_views = False
+    supports_views = True
 
     max_identifier_length = 1024
 
@@ -242,14 +368,14 @@ class SurrealDBDialect(default.DefaultDialect):
     execution_ctx_cls = SurrealDBExecutionContext
     inspector = SurrealDBInspector
 
-    insert_returning = False
-    update_returning = False
-    delete_returning = False
+    insert_returning = True
+    update_returning = True
+    delete_returning = True
 
-    supports_empty_insert = False
-    supports_default_values = False
-    supports_default_metavalue = False
-    supports_multivalues_insert = False
+    supports_empty_insert = True
+    supports_default_values = True
+    supports_default_metavalue = True
+    supports_multivalues_insert = True
 
     colspecs: dict = {}
     ischema_names: dict = {}
@@ -262,9 +388,9 @@ class SurrealDBDialect(default.DefaultDialect):
 
     @classmethod
     def get_pool_class(cls, url: URL) -> Type[Pool]:
-        from sqlalchemy.pool import QueuePool
+        from sqlalchemy.pool import NullPool
 
-        return QueuePool
+        return NullPool
 
     @classmethod
     def import_dbapi(cls) -> Any:
@@ -273,22 +399,29 @@ class SurrealDBDialect(default.DefaultDialect):
         return surrealdb_module
 
     def create_connect_args(self, url: URL) -> ConnectArgsType:
-        opts = url.translate_connect_args()
-        opts.update(url.query)
+        opts = {}
 
-        valid_schemes = ["ws", "wss", "http", "https", "mem", "file", "surrealkv"]
-        scheme = opts.get("scheme")
-        if scheme and scheme not in valid_schemes:
-            raise exc.ArgumentError(f"Invalid or unsupported scheme: {scheme}")
-        opts["scheme"] = scheme or "ws"
+        scheme = url.query.get("scheme", "ws")
+        opts["scheme"] = scheme
+
+        if url.username:
+            opts["username"] = url.username
+        if url.password:
+            opts["password"] = url.password
+
+        host = url.host or "localhost"
+        port = url.port or 8000
+        opts["host"] = host
+        opts["port"] = port
 
         path = url.database or ""
-        opts["database"] = (
-            path.split("/")[0] if len(path.split("/")) > 0 else "surrealdb"
-        )
-        opts["namespace"] = (
-            path.split("/")[1] if len(path.split("/")) > 1 else "default"
-        )
+        if "/" in path:
+            db_parts = path.split("/")
+            opts["database"] = db_parts[0] if len(db_parts) > 0 else "surrealdb"
+            opts["namespace"] = db_parts[1] if len(db_parts) > 1 else "default"
+        else:
+            opts["database"] = path or "surrealdb"
+            opts["namespace"] = url.query.get("namespace", "default")
 
         return ((), opts)
 
@@ -313,19 +446,16 @@ class SurrealDBDialect(default.DefaultDialect):
             )
 
     def do_begin(self, dbapi_connection: Any) -> None:
-        pass
+        dbapi_connection.begin()
 
     def do_commit(self, dbapi_connection: Any) -> None:
-        pass
+        dbapi_connection.commit()
 
     def do_rollback(self, dbapi_connection: Any) -> None:
-        pass
+        dbapi_connection.rollback()
 
     def do_close(self, dbapi_connection: Any) -> None:
-        try:
-            dbapi_connection.close()
-        except Exception:
-            pass
+        dbapi_connection.close()
 
     @reflection.cache
     def get_table_names(self, connection, schema=None, **kw):
@@ -333,22 +463,34 @@ class SurrealDBDialect(default.DefaultDialect):
         tables = []
 
         row = result.fetchone()
-        if row and len(row) > 10:
-            tables_dict = row[10]
+        if row:
+            tables_dict = (
+                row[0]
+                if isinstance(row, (list, tuple))
+                else getattr(row, "__getitem__", lambda i: None)(0)
+            )
             if isinstance(tables_dict, dict):
                 tables = list(tables_dict.keys())
+            elif isinstance(tables_dict, list):
+                for item in tables_dict:
+                    if isinstance(item, dict) and "name" in item:
+                        tables.append(item["name"])
 
         return tables
 
     @reflection.cache
     def get_view_names(self, connection, schema=None, **kw):
-        result = connection.exec_driver_sql("SELECT name FROM SCHEMALESS TYPE view")
+        result = connection.exec_driver_sql(
+            "SELECT name FROM SCHEMALESS WHERE type = 'view'"
+        )
         views = []
         for row in result:
             if hasattr(row, "name"):
                 views.append(row.name)
             elif isinstance(row, dict):
                 views.append(row.get("name"))
+            elif isinstance(row, (list, tuple)) and len(row) > 0:
+                views.append(row[0])
         return views
 
     @reflection.cache
@@ -357,10 +499,10 @@ class SurrealDBDialect(default.DefaultDialect):
 
         row = result.fetchone()
 
-        if not row or len(row) < 2:
+        if not row:
             return []
 
-        fields_info = row[1]
+        fields_info = row[1] if len(row) > 1 else None
 
         if not isinstance(fields_info, dict):
             return []
@@ -372,34 +514,37 @@ class SurrealDBDialect(default.DefaultDialect):
 
         return columns
 
-    def _parse_column_info(self, field_name: str, field_def: str) -> dict:
+    def _parse_column_info(self, field_name: str, field_def: Any) -> dict:
         from sqlalchemy import TEXT, Boolean, DateTime, Float, Integer, String
 
-        col_type = String()
-
         if isinstance(field_def, str):
-            if "TYPE int" in field_def or "TYPE integer" in field_def:
-                col_type = Integer()
-            elif "TYPE float" in field_def or "TYPE number" in field_def:
-                col_type = Float()
-            elif "TYPE bool" in field_def or "TYPE boolean" in field_def:
-                col_type = Boolean()
-            elif "TYPE datetime" in field_def or "TYPE timestamp" in field_def:
-                col_type = DateTime()
-            elif "TYPE array" in field_def:
-                col_type = TEXT()
-            elif "TYPE object" in field_def:
-                col_type = TEXT()
+            type_str = field_def.upper()
 
-            nullable = "NOT NULL" not in field_def
+            if "INT" in type_str or "INTEGER" in type_str:
+                col_type = Integer()
+            elif "FLOAT" in type_str or "NUMBER" in type_str or "DECIMAL" in type_str:
+                col_type = Float()
+            elif "BOOL" in type_str:
+                col_type = Boolean()
+            elif "DATETIME" in type_str or "TIMESTAMP" in type_str:
+                col_type = DateTime()
+            elif "ARRAY" in type_str:
+                col_type = TEXT()
+            elif "OBJECT" in type_str:
+                col_type = TEXT()
+            else:
+                col_type = String()
+
+            nullable = "NOT NULL" not in field_def.upper()
 
             default = None
-            if "DEFAULT" in field_def:
-                parts = field_def.split("DEFAULT")
+            if "DEFAULT" in field_def.upper():
+                parts = field_def.upper().split("DEFAULT")
                 if len(parts) > 1:
                     default_val = parts[1].split()[0] if parts[1].strip() else None
                     default = default_val
         else:
+            col_type = String()
             nullable = True
             default = None
 
@@ -420,7 +565,7 @@ class SurrealDBDialect(default.DefaultDialect):
         if not row or len(row) < 3:
             return []
 
-        indexes_info = row[2]
+        indexes_info = row[2] if len(row) > 2 else None
 
         if not isinstance(indexes_info, dict):
             return []
@@ -434,7 +579,7 @@ class SurrealDBDialect(default.DefaultDialect):
             }
 
             if isinstance(idx_def, str):
-                if "UNIQUE" in idx_def:
+                if "UNIQUE" in idx_def.upper():
                     idx["unique"] = True
 
             indexes.append(idx)
@@ -457,6 +602,13 @@ class SurrealDBDialect(default.DefaultDialect):
 
     @reflection.cache
     def get_foreign_keys(self, connection, table_name, schema=None, **kw):
+        result = connection.exec_driver_sql(f"INFO FOR TABLE {table_name}")
+
+        row = result.fetchone()
+
+        if not row:
+            return []
+
         return []
 
     @reflection.cache
@@ -469,16 +621,14 @@ class SurrealDBDialect(default.DefaultDialect):
 
     @reflection.cache
     def get_table_comment(self, connection, table_name, schema=None, **kw):
-        return None
+        return {"text": None}
 
     def get_schema_names(self, connection, **kw):
-        return ["public"]
+        return ["default"]
 
     @reflection.cache
     def has_table(self, connection, table_name, schema=None, **kw):
-        result = connection.exec_driver_sql(
-            f"SELECT name FROM SCHEMAFULL WHERE name = '{table_name}'"
-        )
+        result = connection.exec_driver_sql(f"INFO FOR TABLE {table_name}")
         return result.fetchone() is not None
 
 
