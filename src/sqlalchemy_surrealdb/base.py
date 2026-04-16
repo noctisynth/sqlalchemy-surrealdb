@@ -5,67 +5,68 @@ from typing import Any, Optional, Type
 from sqlalchemy import URL, Pool, exc
 from sqlalchemy.dialects import registry
 from sqlalchemy.engine import ConnectArgsType, default, reflection
+from sqlalchemy.schema import CreateTable
 from sqlalchemy.sql import compiler
 from sqlalchemy.sql.compiler import DDLCompiler, GenericTypeCompiler, SQLCompiler
 
 
 class SurrealDBTypeCompiler(GenericTypeCompiler):
-    def visit_integer(self, type_: Any, **kwargs: Any) -> str:
+    def visit_INTEGER(self, type_: Any, **kwargs: Any) -> str:
         return "INT"
 
-    def visit_bigint(self, type_: Any, **kwargs: Any) -> str:
+    def visit_BIGINT(self, type_: Any, **kwargs: Any) -> str:
         return "BIGINT"
 
-    def visit_smallinteger(self, type_: Any, **kwargs: Any) -> str:
+    def visit_SMALLINT(self, type_: Any, **kwargs: Any) -> str:
         return "INT"
 
-    def visit_float(self, type_: Any, **kwargs: Any) -> str:
+    def visit_FLOAT(self, type_: Any, **kwargs: Any) -> str:
         return "FLOAT"
 
-    def visit_double(self, type_: Any, **kwargs: Any) -> str:
+    def visit_DOUBLE(self, type_: Any, **kwargs: Any) -> str:
         return "FLOAT"
 
-    def visit_numeric(self, type_: Any, **kwargs: Any) -> str:
+    def visit_NUMERIC(self, type_: Any, **kwargs: Any) -> str:
         return "DECIMAL" if type_.precision else "FLOAT"
 
-    def visit_decimal(self, type_: Any, **kwargs: Any) -> str:
+    def visit_DECIMAL(self, type_: Any, **kwargs: Any) -> str:
         return "DECIMAL"
 
-    def visit_string(self, type_: Any, **kwargs: Any) -> str:
+    def visit_STRING(self, type_: Any, **kwargs: Any) -> str:
         return "STRING"
 
-    def visit_varchar(self, type_: Any, **kwargs: Any) -> str:
+    def visit_VARCHAR(self, type_: Any, **kwargs: Any) -> str:
         return "STRING"
 
-    def visit_text(self, type_: Any, **kwargs: Any) -> str:
+    def visit_TEXT(self, type_: Any, **kwargs: Any) -> str:
         return "STRING"
 
-    def visit_boolean(self, type_: Any, **kwargs: Any) -> str:
+    def visit_BOOLEAN(self, type_: Any, **kwargs: Any) -> str:
         return "BOOL"
 
-    def visit_date(self, type_: Any, **kwargs: Any) -> str:
+    def visit_DATE(self, type_: Any, **kwargs: Any) -> str:
         return "DATETIME"
 
-    def visit_datetime(self, type_: Any, **kwargs: Any) -> str:
+    def visit_DATETIME(self, type_: Any, **kwargs: Any) -> str:
         return "DATETIME"
 
-    def visit_timestamp(self, type_: Any, **kwargs: Any) -> str:
+    def visit_TIMESTAMP(self, type_: Any, **kwargs: Any) -> str:
         return "DATETIME"
 
-    def visit_binary(self, type_: Any, **kwargs: Any) -> str:
+    def visit_BINARY(self, type_: Any, **kwargs: Any) -> str:
         return "BINARY"
 
-    def visit_large_binary(self, type_: Any, **kwargs: Any) -> str:
+    def visit_VARBINARY(self, type_: Any, **kwargs: Any) -> str:
         return "BINARY"
 
-    def visit_json(self, type_: Any, **kwargs: Any) -> str:
+    def visit_BLOB(self, type_: Any, **kwargs: Any) -> str:
+        return "BINARY"
+
+    def visit_JSON(self, type_: Any, **kwargs: Any) -> str:
         return "OBJECT"
 
-    def visit_array(self, type_: Any, **kwargs: Any) -> str:
-        return "ARRAY"
-
-    def visit_object(self, type_: Any, **kwargs: Any) -> str:
-        return "OBJECT"
+    def visit_UUID(self, type_: Any, **kwargs: Any) -> str:
+        return "STRING"
 
 
 class SurrealDBIdentifierPreparer(compiler.IdentifierPreparer):
@@ -203,6 +204,16 @@ class SurrealDBCompiler(SQLCompiler):
             **kwargs,
         )
 
+    def limit_clause(self, select: Any, **kw: Any) -> str:
+        text = ""
+        if select._limit_clause is not None:
+            text += "\n LIMIT " + self.process(select._limit_clause, **kw)
+        if select._offset_clause is not None:
+            if select._limit_clause is None:
+                text += "\n LIMIT MATH::INF"
+            text += " START " + self.process(select._offset_clause, **kw)
+        return text
+
     def visit_select(
         self,
         select_stmt: Any,
@@ -307,22 +318,95 @@ class SurrealDBDDLCompiler(DDLCompiler):
                 colspec += f" DEFAULT {default}"
 
         if not column.nullable:
-            colspec += " NOT NULL"
+            colspec += " ASSERT $value != null"
 
         return colspec
 
-    def visit_create_table(self, create: Any, **kwargs: Any) -> str:
+    def visit_create_table(self, create: CreateTable, **kwargs: Any) -> str:
         table = create.element
         preparer = self.preparer
 
         parts = []
 
-        parts.append(f"DEFINE TABLE {preparer.format_table(table)}")
+        table_name = preparer.format_table(table)
+        parts.append(f"DEFINE TABLE {table_name} SCHEMAFUL")
+
+        for column in table.columns:
+            col_name = preparer.format_column(column)
+            col_type = self.dialect.type_compiler.process(column.type)
+
+            if column.nullable:
+                col_type = self._make_option_type(col_type)
+
+            field_def = f"DEFINE FIELD {col_name} ON {table_name} TYPE {col_type}"
+
+            if column.server_default is not None:
+                default = self.get_column_default_string(column)
+                if default is not None:
+                    field_def += f" DEFAULT {default}"
+
+            if not column.nullable:
+                field_def += " ASSERT $value != null"
+
+            parts.append(field_def)
+
+        for index in table.indexes:
+            idx_name = index.name
+            if idx_name is None:
+                continue
+            idx_cols = [preparer.format_column(c) for c in index.columns]
+            unique = index.unique
+            if unique:
+                parts.append(
+                    f"DEFINE INDEX {idx_name} ON {table_name} FIELDS {', '.join(idx_cols)} UNIQUE"
+                )
+            else:
+                parts.append(
+                    f"DEFINE INDEX {idx_name} ON {table_name} FIELDS {', '.join(idx_cols)}"
+                )
 
         return "; ".join(parts)
 
     def visit_drop_table(self, drop: Any, **kwargs: Any) -> str:
         return f"REMOVE TABLE {self.preparer.format_table(drop.element)}"
+
+    def visit_create_index(
+        self,
+        create: Any,
+        include_schema: bool = False,
+        include_table_schema: bool = True,
+        **kwargs: Any,
+    ) -> str:
+        index = create.element
+        preparer = self.preparer
+        table_name = preparer.format_table(index.table)
+
+        idx_name = index.name
+        if idx_name is None:
+            return ""
+
+        idx_cols = [preparer.format_column(c) for c in index.columns]
+        unique = index.unique
+
+        if unique:
+            return f"DEFINE INDEX {idx_name} ON {table_name} FIELDS {', '.join(idx_cols)} UNIQUE"
+        return f"DEFINE INDEX {idx_name} ON {table_name} FIELDS {', '.join(idx_cols)}"
+
+    def _make_option_type(self, type_str: str) -> str:
+        type_map = {
+            "INT": "option<int>",
+            "BIGINT": "option<int>",
+            "FLOAT": "option<float>",
+            "DECIMAL": "option<decimal>",
+            "STRING": "option<string>",
+            "BOOL": "option<bool>",
+            "DATETIME": "option<datetime>",
+            "BINARY": "option<binary>",
+            "OBJECT": "option<object>",
+            "ARRAY": "option<array>",
+        }
+        upper_type = type_str.upper()
+        return type_map.get(upper_type, f"option<{type_str.lower()}>")
 
 
 class SurrealDBExecutionContext(default.DefaultExecutionContext):

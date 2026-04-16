@@ -216,14 +216,14 @@ SURREAL_TYPE_MAPPING = {
     "duration": SurrealDuration(),
     "record": SurrealRecordID(),
     "geometry": SurrealGeometry(),
-    "option::int": INTEGER(),
-    "option::float": FLOAT(),
-    "option::string": TEXT(),
-    "option::bool": BOOLEAN(),
-    "option::datetime": DATETIME(),
-    "option::array": SurrealArray(),
-    "option::object": SurrealObject(),
-    "option::record": SurrealRecordID(),
+    "option<int>": INTEGER(),
+    "option<float>": FLOAT(),
+    "option<string>": TEXT(),
+    "option<bool>": BOOLEAN(),
+    "option<datetime>": DATETIME(),
+    "option<array>": SurrealArray(),
+    "option<object>": SurrealObject(),
+    "option<record>": SurrealRecordID(),
 }
 
 
