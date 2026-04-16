@@ -163,6 +163,7 @@ class SurrealDBCursor:
             self._last_result = []
             self._rowcount = 0
             self._description = None
+            self._result_columns = None
             return
 
         expected_cols = self._parse_select_columns(query)
@@ -184,6 +185,11 @@ class SurrealDBCursor:
                 self._result_columns = expected_cols
             else:
                 self._result_columns = None
+        elif expected_cols:
+            self._description = tuple(
+                (name, None, None, None, None, None, None) for name in expected_cols
+            )
+            self._result_columns = expected_cols
         else:
             self._description = None
             self._result_columns = None

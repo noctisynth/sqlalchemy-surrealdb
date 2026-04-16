@@ -189,7 +189,7 @@ class SurrealDBCompiler(SQLCompiler):
         self,
         column: Any,
         add_to_result_map: Any = None,
-        include_table: bool = True,
+        include_table: bool = False,
         result_map_targets: Any = (),
         ambiguous_table_name_map: Any = None,
         **kwargs: Any,
@@ -247,32 +247,20 @@ class SurrealDBCompiler(SQLCompiler):
             visiting_cte=visiting_cte,
             **kw,
         )
-
-        if "RETURNING" in sql.upper():
-            sql = sql.replace("RETURNING", "RETURN")
-
         return sql
 
     def visit_update(
         self, update_stmt: Any, visiting_cte: Any = None, **kw: Any
     ) -> str:
         sql = super().visit_update(update_stmt, visiting_cte=visiting_cte, **kw)
-
-        if "RETURNING" in sql.upper():
-            sql = sql.replace("RETURNING", "RETURN")
-
         return sql
 
     def visit_delete(
         self, delete_stmt: Any, visiting_cte: Any = None, **kw: Any
     ) -> str:
         sql = super().visit_delete(delete_stmt, visiting_cte=visiting_cte, **kw)
-
-        if "RETURNING" in sql.upper():
-            sql = sql.replace("RETURNING", "RETURN")
-        elif "RETURN" not in sql.upper():
+        if "RETURN" not in sql.upper():
             sql = sql + " RETURN BEFORE"
-
         return sql
 
     def visit_textclause(
@@ -297,6 +285,10 @@ class SurrealDBCompiler(SQLCompiler):
             text = "RETURN " + " ".join(cleaned_parts)
 
         return text
+
+    def returning_clause(self, stmt: Any, returning_cols: Any, **kw: Any) -> str:
+        columns = [self.preparer.format_column(col) for col in returning_cols]
+        return "RETURN " + ", ".join(columns)
 
 
 class SurrealDBDDLCompiler(DDLCompiler):
@@ -464,17 +456,17 @@ class SurrealDBDialect(default.DefaultDialect):
 
         row = result.fetchone()
         if row:
-            tables_dict = (
-                row[0]
-                if isinstance(row, (list, tuple))
-                else getattr(row, "__getitem__", lambda i: None)(0)
-            )
+            tables_dict = None
+
+            if isinstance(row, dict):
+                tables_dict = row.get("tables", {})
+            elif hasattr(row, "_mapping"):
+                tables_dict = row._mapping.get("tables", {})
+            elif isinstance(row, (list, tuple)) and len(row) > 0:
+                tables_dict = row[0]
+
             if isinstance(tables_dict, dict):
                 tables = list(tables_dict.keys())
-            elif isinstance(tables_dict, list):
-                for item in tables_dict:
-                    if isinstance(item, dict) and "name" in item:
-                        tables.append(item["name"])
 
         return tables
 
@@ -502,7 +494,13 @@ class SurrealDBDialect(default.DefaultDialect):
         if not row:
             return []
 
-        fields_info = row[1] if len(row) > 1 else None
+        fields_info = None
+        if isinstance(row, dict):
+            fields_info = row.get("fields", {})
+        elif hasattr(row, "_mapping"):
+            fields_info = row._mapping.get("fields", {})
+        elif isinstance(row, (list, tuple)) and len(row) > 1:
+            fields_info = row[1] if len(row) > 1 else None
 
         if not isinstance(fields_info, dict):
             return []
@@ -562,10 +560,16 @@ class SurrealDBDialect(default.DefaultDialect):
 
         row = result.fetchone()
 
-        if not row or len(row) < 3:
+        if not row:
             return []
 
-        indexes_info = row[2] if len(row) > 2 else None
+        indexes_info = None
+        if isinstance(row, dict):
+            indexes_info = row.get("indexes", {})
+        elif hasattr(row, "_mapping"):
+            indexes_info = row._mapping.get("indexes", {})
+        elif isinstance(row, (list, tuple)) and len(row) > 2:
+            indexes_info = row[2] if len(row) > 2 else None
 
         if not isinstance(indexes_info, dict):
             return []
@@ -574,7 +578,7 @@ class SurrealDBDialect(default.DefaultDialect):
         for idx_name, idx_def in indexes_info.items():
             idx = {
                 "name": idx_name,
-                "column_names": [],
+                "column_names": self._extract_index_columns(idx_def),
                 "unique": False,
             }
 
@@ -586,19 +590,45 @@ class SurrealDBDialect(default.DefaultDialect):
 
         return indexes
 
+    def _extract_index_columns(self, idx_def: str) -> list:
+        import re
+
+        if not isinstance(idx_def, str):
+            return []
+
+        match = re.search(r"FIELDS\s+([\w\s,]+?)(?:\s+UNIQUE|\s*$)", idx_def, re.I)
+        if match:
+            fields_str = match.group(1).strip()
+            columns = [f.strip().split(".")[-1] for f in fields_str.split(",")]
+            return [c for c in columns if c]
+        return []
+
     def get_multi_pk_constraint(self, connection, **kw):
         return {}
 
     @reflection.cache
-    def get_primary_keys(self, connection, table_name, schema=None, **kw):
+    def get_pk_constraint(self, connection, table_name, schema=None, **kw):
         result = connection.exec_driver_sql(f"INFO FOR TABLE {table_name}")
 
         row = result.fetchone()
 
-        if not row or len(row) < 2:
-            return [{"constrained_columns": ["id"]}]
+        if not row:
+            return {"constrained_columns": ["id"], "name": None}
 
-        return [{"constrained_columns": ["id"]}]
+        fields_info = None
+        if isinstance(row, dict):
+            fields_info = row.get("fields", {})
+        elif hasattr(row, "_mapping"):
+            fields_info = row._mapping.get("fields", {})
+        elif isinstance(row, (list, tuple)) and len(row) > 1:
+            fields_info = row[1] if len(row) > 1 else None
+
+        if isinstance(fields_info, dict) and "id" in fields_info:
+            field_def = fields_info["id"]
+            if isinstance(field_def, str) and "TYPE record" in field_def.upper():
+                return {"constrained_columns": ["id"], "name": None}
+
+        return {"constrained_columns": ["id"], "name": None}
 
     @reflection.cache
     def get_foreign_keys(self, connection, table_name, schema=None, **kw):
@@ -609,11 +639,119 @@ class SurrealDBDialect(default.DefaultDialect):
         if not row:
             return []
 
-        return []
+        import re
+
+        foreign_keys = []
+
+        fields_info = None
+        if isinstance(row, dict):
+            fields_info = row.get("fields", {})
+        elif hasattr(row, "_mapping"):
+            fields_info = row._mapping.get("fields", {})
+        elif isinstance(row, (list, tuple)) and len(row) > 1:
+            fields_info = row[1] if len(row) > 1 else None
+
+        if isinstance(fields_info, dict):
+            for col_name, col_def in fields_info.items():
+                if not isinstance(col_def, str):
+                    continue
+
+                match = re.search(r"TYPE\s+RECORD\s*\(\s*(\w+)\s*\)", col_def, re.I)
+                if match:
+                    ref_table = match.group(1)
+                    if col_name != "id":
+                        foreign_keys.append(
+                            {
+                                "name": f"fk_{col_name}",
+                                "constrained_columns": [col_name],
+                                "referred_table": ref_table,
+                                "referred_columns": ["id"],
+                            }
+                        )
+
+        indexes_info = None
+        if isinstance(row, dict):
+            indexes_info = row.get("indexes", {})
+        elif hasattr(row, "_mapping"):
+            indexes_info = row._mapping.get("indexes", {})
+        elif isinstance(row, (list, tuple)) and len(row) > 2:
+            indexes_info = row[2] if len(row) > 2 else None
+
+        if isinstance(indexes_info, dict):
+            for idx_name, idx_def in indexes_info.items():
+                if not isinstance(idx_def, str):
+                    continue
+
+                idx_upper = idx_def.upper()
+                if "UNIQUE" not in idx_upper and "INDEX" not in idx_upper:
+                    continue
+
+                col_match = re.search(
+                    r"FIELDS\s+([\w\s,]+?)(?:\s+UNIQUE|\s*$)", idx_def, re.I
+                )
+                if not col_match:
+                    continue
+
+                fields_str = col_match.group(1).strip()
+                for field_part in fields_str.split(","):
+                    field_name = field_part.strip().split(".")[-1]
+
+                    if field_name.startswith("id_") or field_name.endswith("_id"):
+                        ref_table_match = re.search(
+                            r"TYPE\s+RECORD\s*\(\s*(\w+)\s*\)", idx_def, re.I
+                        )
+                        if ref_table_match:
+                            ref_table = ref_table_match.group(1)
+                        else:
+                            ref_table = field_name.replace("id_", "").replace("_id", "")
+
+                        fk_exists = any(
+                            fk["constrained_columns"] == [field_name]
+                            for fk in foreign_keys
+                        )
+                        if not fk_exists:
+                            foreign_keys.append(
+                                {
+                                    "name": f"fk_{field_name}",
+                                    "constrained_columns": [field_name],
+                                    "referred_table": ref_table,
+                                    "referred_columns": ["id"],
+                                }
+                            )
+
+        return foreign_keys
 
     @reflection.cache
     def get_unique_constraints(self, connection, table_name, schema=None, **kw):
-        return []
+        result = connection.exec_driver_sql(f"INFO FOR TABLE {table_name}")
+
+        row = result.fetchone()
+
+        if not row:
+            return []
+
+        indexes_info = None
+        if isinstance(row, dict):
+            indexes_info = row.get("indexes", {})
+        elif hasattr(row, "_mapping"):
+            indexes_info = row._mapping.get("indexes", {})
+        elif isinstance(row, (list, tuple)) and len(row) > 2:
+            indexes_info = row[2] if len(row) > 2 else None
+
+        if not isinstance(indexes_info, dict):
+            return []
+
+        constraints = []
+        for idx_name, idx_def in indexes_info.items():
+            if isinstance(idx_def, str) and "UNIQUE" in idx_def.upper():
+                constraints.append(
+                    {
+                        "name": idx_name,
+                        "column_names": self._extract_index_columns(idx_def),
+                    }
+                )
+
+        return constraints
 
     @reflection.cache
     def get_check_constraints(self, connection, table_name, schema=None, **kw):
@@ -628,8 +766,24 @@ class SurrealDBDialect(default.DefaultDialect):
 
     @reflection.cache
     def has_table(self, connection, table_name, schema=None, **kw):
-        result = connection.exec_driver_sql(f"INFO FOR TABLE {table_name}")
-        return result.fetchone() is not None
+        result = connection.exec_driver_sql("INFO FOR DB")
+        row = result.fetchone()
+
+        if not row:
+            return False
+
+        row_dict = None
+        if isinstance(row, dict):
+            row_dict = row
+        elif hasattr(row, "_mapping"):
+            row_dict = row._mapping
+
+        if row_dict:
+            tables_info = row_dict.get("tables", {})
+            if isinstance(tables_info, dict):
+                return table_name in tables_info
+
+        return False
 
 
 registry.register("surrealdb", "sqlalchemy_surrealdb.base", "SurrealDBDialect")
